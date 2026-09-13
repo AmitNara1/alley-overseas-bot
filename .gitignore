@@ -1,0 +1,7 @@
+whatsapp-qna-bot/
+.env
+leads.csv
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
