@@ -534,29 +534,45 @@ app = FastAPI(
 @app.post("/webhook")
 async def webhook(request: Request):
     """
-    Gupshup sends incoming WhatsApp messages here as JSON.
-    We must return 200 quickly; replies are sent via a separate API call.
+    Handles incoming WhatsApp messages from Gupshup (supports both Gupshup v2 and Meta v3 formats).
     """
     try:
         body = await request.json()
     except Exception:
-        # Gupshup sometimes sends form-encoded payloads during verification
+        # Gupshup sometimes sends form-encoded / empty verification requests
         return JSONResponse({"status": "ok"})
 
-    log.info("Incoming webhook: %s", json.dumps(body)[:300])
+    log.info("Incoming webhook: %s", json.dumps(body)[:400])
 
+    sender_phone = None
+    text = None
+
+    # Format 1: Gupshup format (v2)
     event_type = body.get("type", "")
-
-    # Handle only inbound user messages
     if event_type == "message":
-        payload      = body.get("payload", {})
-        msg_type     = payload.get("type", "")
+        payload = body.get("payload", {})
+        msg_type = payload.get("type", "")
         sender_phone = payload.get("source", "")
-
         if msg_type == "text":
             text = payload.get("payload", {}).get("text", "")
-            if sender_phone and text:
-                await handle_message(sender_phone, text)
+
+    # Format 2: Meta format (v3)
+    elif "entry" in body:
+        try:
+            for entry in body.get("entry", []):
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
+                    messages = value.get("messages", [])
+                    for msg in messages:
+                        if msg.get("type") == "text":
+                            sender_phone = msg.get("from")
+                            text = msg.get("text", {}).get("body")
+        except Exception as e:
+            log.warning("Failed to parse Meta v3 payload: %s", e)
+
+    # Process message if valid sender and text extracted
+    if sender_phone and text:
+        await handle_message(sender_phone, text)
 
     return JSONResponse({"status": "ok"})
 
