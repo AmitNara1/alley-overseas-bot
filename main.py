@@ -6,10 +6,12 @@ Deploy: Railway (always-on, free tier)
 Author: Built with Antigravity AI
 """
 
+import asyncio
 import csv
 import json
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -17,8 +19,6 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-
-import sys
 
 load_dotenv()
 
@@ -112,35 +112,60 @@ def append_to_sheet(row: list) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV FALLBACK STORAGE
+# CSV STORAGE & REAL-TIME AUTOSAVE
 # ─────────────────────────────────────────────────────────────────────────────
 
 LEADS_FILE = "leads.csv"
 CSV_HEADERS = [
-    "timestamp", "phone", "country", "study_level", "intake",
-    "qualification", "english_test", "budget", "help_type",
-    "name", "email", "mobile", "city",
+    "timestamp", "phone", "status", "country", "study_level", "intake",
+    "qualification", "english_test", "budget", "help_type", "name", "city",
 ]
 
 
-def save_lead_csv(phone: str, data: dict) -> None:
-    file_exists = os.path.isfile(LEADS_FILE)
-    with open(LEADS_FILE, "a", newline="", encoding="utf-8") as f:
+def save_lead_csv(phone: str, data: dict, status: str = "Completed") -> None:
+    """Save or update lead entry in CSV."""
+    rows = []
+    found = False
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if os.path.isfile(LEADS_FILE):
+        with open(LEADS_FILE, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                # Update existing row if from same phone session
+                if r.get("phone") == phone and r.get("status") != "Completed":
+                    r["timestamp"] = now_str
+                    r["status"] = status
+                    for k in CSV_HEADERS[3:]:
+                        if k in data:
+                            r[k] = data[k]
+                    found = True
+                rows.append(r)
+
+    if not found:
+        new_row = {
+            "timestamp": now_str,
+            "phone": phone,
+            "status": status,
+        }
+        for k in CSV_HEADERS[3:]:
+            new_row[k] = data.get(k, "")
+        rows.append(new_row)
+
+    with open(LEADS_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        if not file_exists:
-            writer.writeheader()
-        row = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "phone": phone}
-        row.update({k: data.get(k, "") for k in CSV_HEADERS[2:]})
-        writer.writerow(row)
-    log.info("Lead saved to leads.csv ✅")
+        writer.writeheader()
+        writer.writerows(rows)
+    log.info("Lead saved to leads.csv [%s] ✅", status)
 
 
-def save_lead(phone: str, data: dict) -> None:
-    """Save to both CSV (always) and Google Sheets (if configured)."""
-    save_lead_csv(phone, data)
+def save_lead(phone: str, data: dict, status: str = "Completed") -> None:
+    """Save to CSV (always) and Google Sheets (if configured)."""
+    save_lead_csv(phone, data, status)
     sheet_row = [
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         phone,
+        status,
         data.get("country", ""),
         data.get("study_level", ""),
         data.get("intake", ""),
@@ -149,8 +174,6 @@ def save_lead(phone: str, data: dict) -> None:
         data.get("budget", ""),
         data.get("help_type", ""),
         data.get("name", ""),
-        data.get("email", ""),
-        data.get("mobile", ""),
         data.get("city", ""),
     ]
     append_to_sheet(sheet_row)
@@ -318,10 +341,8 @@ FLOW = [
 FLOW_STATE_MAP: dict[str, int] = {q["state"]: i for i, q in enumerate(FLOW)}
 
 LEAD_FIELDS = [
-    {"state": "lead_name",   "question": "✏️ Please enter your *full name*:\n_(e.g. Rahul Sharma)_",          "field": "name"},
-    {"state": "lead_email",  "question": "📧 Please enter your *email address*:\n_(e.g. rahul@gmail.com)_",   "field": "email"},
-    {"state": "lead_mobile", "question": "📱 Please enter your *mobile number*:\n_(e.g. 9876543210)_",        "field": "mobile"},
-    {"state": "lead_city",   "question": "🏙️ Please enter your *city*:\n_(e.g. Mumbai, Delhi, Ahmedabad)_",   "field": "city"},
+    {"state": "lead_name", "question": "✏️ Please enter your *full name*:\n_(e.g. Rahul Sharma)_", "field": "name"},
+    {"state": "lead_city", "question": "🏙️ Please enter your *city*:\n_(e.g. Mumbai, Delhi, Ahmedabad)_", "field": "city"},
 ]
 
 LEAD_STATE_MAP: dict[str, int] = {lf["state"]: i for i, lf in enumerate(LEAD_FIELDS)}
@@ -343,14 +364,14 @@ I'll help you:
 It takes less than *1 minute*. Let's get started! 🚀
 ━━━━━━━━━━━━━━━━━━━━━━"""
 
-LEAD_INTRO = "🙌 Almost there! Just a few details so our counsellor can reach you:"
+LEAD_INTRO = "🙌 Almost done! Just 2 quick details to connect you with your counsellor:"
 
 THANK_YOU = """\
 🎉 *Thank You!*
 
 Your information has been received. ✅
 
-One of our study abroad experts will contact you *shortly*.
+One of our study abroad experts will contact you on WhatsApp/Phone *shortly*.
 
 ━━━━━━━━━━━━━━━━━━━━━━
 Need immediate assistance?
@@ -386,12 +407,25 @@ Our team will contact you soon.
 
 _Type *restart* to start over._"""
 
+ABANDONED_REENGAGE_MSG = """\
+⏳ *We've saved your progress!*
+
+We noticed you paused before finishing. Our study abroad team at *Alley Overseas* has saved your preferences so far and a counsellor will be happy to assist you!
+
+━━━━━━━━━━━━━━━━━━━━━━
+🔄 Reply *restart* anytime to begin a fresh application
+📞 Reply *CALL* to request an instant call back
+━━━━━━━━━━━━━━━━━━━━━━
+_Alley Overseas — Your Gateway to Global Education_ 🌍"""
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# IN-MEMORY SESSIONS
+# IN-MEMORY SESSIONS & INACTIVITY TIMEOUT ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
 sessions: dict[str, dict] = {}
+inactivity_timers: dict[str, asyncio.Task] = {}
+INACTIVITY_TIMEOUT_SECONDS = int(os.getenv("INACTIVITY_TIMEOUT_SECONDS", "300"))  # 5 mins default
 
 
 def get_session(phone: str) -> dict:
@@ -401,8 +435,40 @@ def get_session(phone: str) -> dict:
 
 
 def reset_session(phone: str) -> dict:
+    cancel_inactivity_timer(phone)
     sessions[phone] = {"state": "start", "step_index": -1, "lead_step": -1, "data": {}}
     return sessions[phone]
+
+
+def cancel_inactivity_timer(phone: str) -> None:
+    if phone in inactivity_timers:
+        task = inactivity_timers.pop(phone)
+        if not task.done():
+            task.cancel()
+
+
+def start_inactivity_timer(phone: str) -> None:
+    cancel_inactivity_timer(phone)
+    task = asyncio.create_task(_inactivity_timeout_handler(phone))
+    inactivity_timers[phone] = task
+
+
+async def _inactivity_timeout_handler(phone: str) -> None:
+    try:
+        await asyncio.sleep(INACTIVITY_TIMEOUT_SECONDS)
+        session = get_session(phone)
+        st = session.get("state", "")
+        if st not in ("start", "complete"):
+            # Mark lead as Abandoned / Partial in CSV / Sheets
+            step_name = st.replace("q", "Question ").replace("lead_", "")
+            save_lead(phone, session["data"], status=f"Abandoned ({step_name})")
+            session["state"] = "complete"
+            await send_message(phone, ABANDONED_REENGAGE_MSG)
+            log.info("Sent abandoned re-engagement message to %s [%s] ✅", phone, step_name)
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        log.error("Error in inactivity timer for %s: %s", phone, exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -411,6 +477,8 @@ def reset_session(phone: str) -> dict:
 
 async def handle_message(phone: str, raw_text: str) -> None:
     """Process an incoming WhatsApp message and send the appropriate reply."""
+    cancel_inactivity_timer(phone)
+
     body     = raw_text.strip()
     body_low = body.lower()
     session  = get_session(phone)
@@ -434,6 +502,8 @@ async def handle_message(phone: str, raw_text: str) -> None:
     if state == "start":
         session["state"] = "q1_country"
         session["step_index"] = 0
+        save_lead(phone, session["data"], status="In Progress (Q1)")
+        start_inactivity_timer(phone)
         await send_message(phone, WELCOME_MESSAGE + "\n\n" + FLOW[0]["question"])
         return
 
@@ -443,7 +513,6 @@ async def handle_message(phone: str, raw_text: str) -> None:
         q   = FLOW[idx]
 
         if q.get("allow_multiple", False):
-            # Parse multiple numbers (e.g. "1, 3, 4", "1 3 4", "1,2", "6")
             raw_parts = [p.strip() for p in body.replace(",", " ").replace("&", " ").replace("+", " ").split()]
             selected_indices = []
             for p in raw_parts:
@@ -456,13 +525,13 @@ async def handle_message(phone: str, raw_text: str) -> None:
                     pass
 
             if not selected_indices:
+                start_inactivity_timer(phone)
                 await send_message(
                     phone,
                     f"⚠️ Please reply with one or more numbers between 1 and {q['max']} (e.g. *1, 3, 4* or *6*).\n\n{q['question']}"
                 )
                 return
 
-            # If "Everything" (option 6) is selected or all options selected
             if len(q["options"]) in selected_indices:
                 selected_labels = "Everything"
             else:
@@ -473,6 +542,7 @@ async def handle_message(phone: str, raw_text: str) -> None:
             try:
                 choice = int(body)
             except ValueError:
+                start_inactivity_timer(phone)
                 await send_message(
                     phone,
                     f"⚠️ Please reply with a *number* between 1 and {q['max']}.\n\n{q['question']}"
@@ -480,6 +550,7 @@ async def handle_message(phone: str, raw_text: str) -> None:
                 return
 
             if not (1 <= choice <= q["max"]):
+                start_inactivity_timer(phone)
                 await send_message(
                     phone,
                     f"⚠️ Invalid choice. Please reply with a number between *1* and *{q['max']}*.\n\n{q['question']}"
@@ -488,36 +559,44 @@ async def handle_message(phone: str, raw_text: str) -> None:
 
             session["data"][q["field"]] = q["options"][choice - 1]
 
+        # Instant autosave after each question
+        save_lead(phone, session["data"], status=f"In Progress (Q{idx + 1})")
         next_idx = idx + 1
 
         if next_idx < len(FLOW):
             session["step_index"] = next_idx
             session["state"]      = FLOW[next_idx]["state"]
+            start_inactivity_timer(phone)
             await send_message(phone, FLOW[next_idx]["question"])
         else:
             session["state"]     = "lead_name"
             session["lead_step"] = 0
+            start_inactivity_timer(phone)
             await send_message(phone, LEAD_INTRO + "\n\n" + LEAD_FIELDS[0]["question"])
         return
 
-    # ── Lead-capture free-text fields ─────────────────────────────────────
+    # ── Lead-capture free-text fields (Name & City only) ──────────────────
     if state in LEAD_STATE_MAP:
         ls    = session["lead_step"]
         field = LEAD_FIELDS[ls]
 
         if len(body) < 2:
+            start_inactivity_timer(phone)
             await send_message(phone, f"⚠️ Please enter a valid response.\n\n{field['question']}")
             return
 
         session["data"][field["field"]] = body
+        save_lead(phone, session["data"], status=f"In Progress ({field['field'].title()})")
         next_ls = ls + 1
 
         if next_ls < len(LEAD_FIELDS):
             session["lead_step"] = next_ls
             session["state"]     = LEAD_FIELDS[next_ls]["state"]
+            start_inactivity_timer(phone)
             await send_message(phone, LEAD_FIELDS[next_ls]["question"])
         else:
-            save_lead(phone, session["data"])
+            cancel_inactivity_timer(phone)
+            save_lead(phone, session["data"], status="Completed")
             session["state"] = "complete"
             await send_message(phone, THANK_YOU)
         return

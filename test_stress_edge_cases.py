@@ -78,10 +78,8 @@ async def run_edge_case_tests():
     assert "valid response" in sent_replies[-1]
     print("   ✅ Bot rejected 1-character input on Name field.")
 
-    # Complete name
+    # Complete name and city
     await main.handle_message(phone, "Aarav Mehta")
-    await main.handle_message(phone, "aarav@gmail.com")
-    await main.handle_message(phone, "+91 9988776655")
     await main.handle_message(phone, "Ahmedabad")
 
     # Test 9: User types after completion

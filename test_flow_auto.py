@@ -72,20 +72,10 @@ async def test_full_lead_flow():
 
     print(">> Step 9: User enters Name 'Kewal Malde'")
     await main.handle_message(test_phone, "Kewal Malde")
-    assert "Please enter your *email address*" in captured_messages[-1]
-    print("  [OK] Lead Capture: Email requested.")
-
-    print(">> Step 10: User enters Email 'kewal@example.com'")
-    await main.handle_message(test_phone, "kewal@example.com")
-    assert "Please enter your *mobile number*" in captured_messages[-1]
-    print("  [OK] Lead Capture: Mobile requested.")
-
-    print(">> Step 11: User enters Mobile '9876543210'")
-    await main.handle_message(test_phone, "9876543210")
     assert "Please enter your *city*" in captured_messages[-1]
-    print("  [OK] Lead Capture: City requested.")
+    print("  [OK] Lead Capture: City requested (Email & Mobile skipped!).")
 
-    print(">> Step 12: User enters City 'Mumbai'")
+    print(">> Step 10: User enters City 'Mumbai'")
     await main.handle_message(test_phone, "Mumbai")
     assert "Thank You!" in captured_messages[-1]
     print("  [OK] Complete Thank You message sent.")
@@ -101,13 +91,13 @@ async def test_full_lead_flow():
             print(f"  * {k}: {v}")
         
         assert lead["name"] == "Kewal Malde"
-        assert lead["email"] == "kewal@example.com"
+        assert lead["status"] == "Completed"
         assert lead["country"] == "USA 🇺🇸"
         assert lead["study_level"] == "Master's"
         assert lead["help_type"] == "University Selection, Scholarship Guidance, Visa Assistance"
         assert lead["city"] == "Mumbai"
 
-    print("\n>>> ALL 12 STEPS (INCLUDING MULTI-SELECT) PASSED WITH 100% ACCURACY! <<<")
+    print("\n>>> ALL STEPS (STREAMLINED LEAD CAPTURE + AUTOSAVE) PASSED WITH 100% ACCURACY! <<<")
 
 if __name__ == "__main__":
     asyncio.run(test_full_lead_flow())
