@@ -18,8 +18,16 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+import sys
+
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+# Configure logger to stdout (fixes red error bars on Railway)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stdout,
+)
 log = logging.getLogger("alley-bot")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +39,21 @@ GUPSHUP_APP_NAME   = os.getenv("GUPSHUP_APP_NAME", "AlleyOverseas")
 GUPSHUP_SOURCE     = os.getenv("GUPSHUP_SOURCE", "")   # Your WA number, no + or spaces, e.g. 919876543210
 GOOGLE_SHEET_ID    = os.getenv("GOOGLE_SHEET_ID", "")
 GOOGLE_CREDS_JSON  = os.getenv("GOOGLE_CREDS_JSON", "")  # Full service-account JSON as a string
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PERSISTENT HTTP CLIENT POOL (ULTRA-FAST GUPSHUP DISPATCH)
+# ─────────────────────────────────────────────────────────────────────────────
+
+http_client: httpx.AsyncClient | None = None
+
+def get_http_client() -> httpx.AsyncClient:
+    global http_client
+    if http_client is None or http_client.is_closed:
+        http_client = httpx.AsyncClient(
+            timeout=8.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+        )
+    return http_client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +165,7 @@ GUPSHUP_API_URL = "https://api.gupshup.io/wa/api/v1/msg"
 
 async def send_message(destination: str, text: str) -> None:
     """
-    Send a WhatsApp text message via Gupshup.
+    Send a WhatsApp text message via Gupshup using pooled persistent HTTP connection.
     destination: user's phone number (e.g. 919876543210, no +)
     """
     if not GUPSHUP_API_KEY or not GUPSHUP_SOURCE:
@@ -159,12 +182,12 @@ async def send_message(destination: str, text: str) -> None:
     headers = {"apikey": GUPSHUP_API_KEY, "Content-Type": "application/x-www-form-urlencoded"}
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(GUPSHUP_API_URL, data=payload, headers=headers)
-            if resp.status_code == 202:
-                log.info("Message sent to %s ✅", destination)
-            else:
-                log.warning("Gupshup returned %s: %s", resp.status_code, resp.text)
+        client = get_http_client()
+        resp = await client.post(GUPSHUP_API_URL, data=payload, headers=headers)
+        if resp.status_code == 202:
+            log.info("Message sent to %s ✅", destination)
+        else:
+            log.warning("Gupshup returned %s: %s", resp.status_code, resp.text)
     except Exception as exc:
         log.error("Failed to send message: %s", exc)
 
@@ -519,8 +542,12 @@ async def handle_message(phone: str, raw_text: str) -> None:
 async def lifespan(app: FastAPI):
     log.info("🚀 Alley Overseas WhatsApp Bot starting up...")
     _get_sheets_client()   # pre-warm Sheets connection
+    get_http_client()      # pre-warm Gupshup HTTP pool
     yield
-    log.info("Bot shutting down.")
+    log.info("Bot shutting down...")
+    global http_client
+    if http_client and not http_client.is_closed:
+        await http_client.aclose()
 
 
 app = FastAPI(
