@@ -100,9 +100,7 @@ def append_to_sheet(row: list) -> None:
         # Add header row if the sheet is empty
         if ws.row_count == 0 or not ws.get_all_values():
             ws.append_row(
-                ["Timestamp", "Phone", "Country", "Study Level", "Intake",
-                 "Qualification", "English Test", "Budget", "Help Type",
-                 "Full Name", "Email", "Mobile", "City"],
+                ["Timestamp", "Phone", "Status", "Name", "Country", "Study Level", "Intake", "Budget"],
                 value_input_option="RAW",
             )
         ws.append_row(row, value_input_option="RAW")
@@ -117,8 +115,7 @@ def append_to_sheet(row: list) -> None:
 
 LEADS_FILE = "leads.csv"
 CSV_HEADERS = [
-    "timestamp", "phone", "status", "country", "study_level", "intake",
-    "qualification", "english_test", "budget", "help_type", "name", "city",
+    "timestamp", "phone", "status", "name", "country", "study_level", "intake", "budget",
 ]
 
 
@@ -166,15 +163,11 @@ def save_lead(phone: str, data: dict, status: str = "Completed") -> None:
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         phone,
         status,
+        data.get("name", ""),
         data.get("country", ""),
         data.get("study_level", ""),
         data.get("intake", ""),
-        data.get("qualification", ""),
-        data.get("english_test", ""),
         data.get("budget", ""),
-        data.get("help_type", ""),
-        data.get("name", ""),
-        data.get("city", ""),
     ]
     append_to_sheet(sheet_row)
 
@@ -216,14 +209,14 @@ async def send_message(destination: str, text: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONVERSATION FLOW DEFINITION
+# CONVERSATION FLOW DEFINITION (4 HIGH-CONVERSION QUESTIONS)
 # ─────────────────────────────────────────────────────────────────────────────
 
 FLOW = [
     {
         "state": "q1_country",
         "question": (
-            "🌍 *Question 1 of 7*\n"
+            "🌍 *Question 1 of 4*\n"
             "Which country are you interested in?\n\n"
             "1️⃣ 🇬🇧 UK\n"
             "2️⃣ 🇺🇸 USA\n"
@@ -242,7 +235,7 @@ FLOW = [
     {
         "state": "q2_level",
         "question": (
-            "📚 *Question 2 of 7*\n"
+            "📚 *Question 2 of 4*\n"
             "What are you planning to study?\n\n"
             "1️⃣ Bachelor's\n"
             "2️⃣ Master's\n"
@@ -257,7 +250,7 @@ FLOW = [
     {
         "state": "q3_intake",
         "question": (
-            "📅 *Question 3 of 7*\n"
+            "📅 *Question 3 of 4*\n"
             "When do you plan to start?\n\n"
             "1️⃣ Jan Intake\n"
             "2️⃣ May Intake\n"
@@ -271,41 +264,9 @@ FLOW = [
         "max": 5,
     },
     {
-        "state": "q4_qualification",
+        "state": "q4_budget",
         "question": (
-            "🎓 *Question 4 of 7*\n"
-            "What is your highest qualification?\n\n"
-            "1️⃣ 12th Grade\n"
-            "2️⃣ Diploma\n"
-            "3️⃣ Bachelor's\n"
-            "4️⃣ Master's\n"
-            "5️⃣ Other\n\n"
-            "_Reply with a number (1–5)_"
-        ),
-        "options": ["12th Grade", "Diploma", "Bachelor's", "Master's", "Other"],
-        "field": "qualification",
-        "max": 5,
-    },
-    {
-        "state": "q5_english",
-        "question": (
-            "🗣️ *Question 5 of 7*\n"
-            "Have you taken any English language test?\n\n"
-            "1️⃣ IELTS\n"
-            "2️⃣ PTE\n"
-            "3️⃣ TOEFL\n"
-            "4️⃣ Duolingo\n"
-            "5️⃣ Not Yet\n\n"
-            "_Reply with a number (1–5)_"
-        ),
-        "options": ["IELTS", "PTE", "TOEFL", "Duolingo", "Not Yet"],
-        "field": "english_test",
-        "max": 5,
-    },
-    {
-        "state": "q6_budget",
-        "question": (
-            "💰 *Question 6 of 7*\n"
+            "💰 *Question 4 of 4*\n"
             "What is your approximate budget?\n\n"
             "1️⃣ Under ₹15 Lakhs\n"
             "2️⃣ ₹15–25 Lakhs\n"
@@ -318,34 +279,11 @@ FLOW = [
         "field": "budget",
         "max": 5,
     },
-    {
-        "state": "q7_help",
-        "question": (
-            "🤝 *Question 7 of 7*\n"
-            "How would you like us to help?\n\n"
-            "1️⃣ University Selection\n"
-            "2️⃣ Admission Process\n"
-            "3️⃣ Scholarship Guidance\n"
-            "4️⃣ Visa Assistance\n"
-            "5️⃣ Education Loan\n"
-            "6️⃣ Everything\n\n"
-            "_Reply with numbers (e.g. *1, 3, 4* or *6* for all)_"
-        ),
-        "options": ["University Selection", "Admission Process", "Scholarship Guidance", "Visa Assistance", "Education Loan", "Everything"],
-        "field": "help_type",
-        "max": 6,
-        "allow_multiple": True,
-    },
 ]
 
 FLOW_STATE_MAP: dict[str, int] = {q["state"]: i for i, q in enumerate(FLOW)}
 
-LEAD_FIELDS = [
-    {"state": "lead_name", "question": "✏️ Please enter your *full name*:\n_(e.g. Rahul Sharma)_", "field": "name"},
-    {"state": "lead_city", "question": "🏙️ Please enter your *city*:\n_(e.g. Mumbai, Delhi, Ahmedabad)_", "field": "city"},
-]
 
-LEAD_STATE_MAP: dict[str, int] = {lf["state"]: i for i, lf in enumerate(LEAD_FIELDS)}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MESSAGE TEMPLATES
@@ -361,22 +299,20 @@ I'll help you:
 ✅ Estimate your admission chances
 ✅ Connect you with a counsellor
 
-It takes less than *1 minute*. Let's get started! 🚀
+It takes less than *30 seconds* (just 4 quick questions!). Let's get started! 🚀
 ━━━━━━━━━━━━━━━━━━━━━━"""
-
-LEAD_INTRO = "🙌 Almost done! Just 2 quick details to connect you with your counsellor:"
 
 THANK_YOU = """\
 🎉 *Thank You!*
 
-Your information has been received. ✅
+Your preferences have been received. ✅
 
 One of our study abroad experts will contact you on WhatsApp/Phone *shortly*.
 
 ━━━━━━━━━━━━━━━━━━━━━━
 Need immediate assistance?
 
-📞 Reply *CALL* → Request a call back
+📞 Reply *CALL* → Request an instant call back
 💬 Reply *AGENT* → Chat with a counsellor
 ━━━━━━━━━━━━━━━━━━━━━━
 _Alley Overseas — Your Gateway to Global Education_ 🌍"""
@@ -398,14 +334,14 @@ A team member will reach out on WhatsApp *shortly*!
 _We're here to help you every step of the way!_ 🚀"""
 
 ALREADY_DONE_MSG = """\
-🎉 You've already submitted your details!
+🎉 You've already submitted your study preferences!
 
 Our team will contact you soon.
 
 📞 Reply *CALL* to request a call back
 💬 Reply *AGENT* to chat with a counsellor
 
-_Type *restart* to start over._"""
+_Type *restart* to start a fresh assessment._"""
 
 ABANDONED_REENGAGE_MSG = """\
 ⏳ *We've saved your progress!*
@@ -430,13 +366,13 @@ INACTIVITY_TIMEOUT_SECONDS = int(os.getenv("INACTIVITY_TIMEOUT_SECONDS", "300"))
 
 def get_session(phone: str) -> dict:
     if phone not in sessions:
-        sessions[phone] = {"state": "start", "step_index": -1, "lead_step": -1, "data": {}}
+        sessions[phone] = {"state": "start", "step_index": -1, "data": {}}
     return sessions[phone]
 
 
 def reset_session(phone: str) -> dict:
     cancel_inactivity_timer(phone)
-    sessions[phone] = {"state": "start", "step_index": -1, "lead_step": -1, "data": {}}
+    sessions[phone] = {"state": "start", "step_index": -1, "data": {}}
     return sessions[phone]
 
 
@@ -460,7 +396,7 @@ async def _inactivity_timeout_handler(phone: str) -> None:
         st = session.get("state", "")
         if st not in ("start", "complete"):
             # Mark lead as Abandoned / Partial in CSV / Sheets
-            step_name = st.replace("q", "Question ").replace("lead_", "")
+            step_name = st.replace("q", "Question ")
             save_lead(phone, session["data"], status=f"Abandoned ({step_name})")
             session["state"] = "complete"
             await send_message(phone, ABANDONED_REENGAGE_MSG)
@@ -475,13 +411,16 @@ async def _inactivity_timeout_handler(phone: str) -> None:
 # CORE MESSAGE HANDLER
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def handle_message(phone: str, raw_text: str) -> None:
+async def handle_message(phone: str, raw_text: str, sender_name: str = "") -> None:
     """Process an incoming WhatsApp message and send the appropriate reply."""
     cancel_inactivity_timer(phone)
 
     body     = raw_text.strip()
     body_low = body.lower()
     session  = get_session(phone)
+
+    if sender_name and not session["data"].get("name"):
+        session["data"]["name"] = sender_name
 
     # ── Global special commands ────────────────────────────────────────────
     if body_low == "call":
@@ -495,6 +434,8 @@ async def handle_message(phone: str, raw_text: str) -> None:
     # ── Reset triggers ─────────────────────────────────────────────────────
     if body_low in ("hi", "hello", "hey", "start", "restart", "menu", "begin", "reset"):
         session = reset_session(phone)
+        if sender_name:
+            session["data"]["name"] = sender_name
 
     state = session["state"]
 
@@ -507,94 +448,42 @@ async def handle_message(phone: str, raw_text: str) -> None:
         await send_message(phone, WELCOME_MESSAGE + "\n\n" + FLOW[0]["question"])
         return
 
-    # ── Q1–Q7 numbered-choice questions ───────────────────────────────────
+    # ── Q1–Q4 numbered-choice questions ───────────────────────────────────
     if state in FLOW_STATE_MAP:
         idx = session["step_index"]
         q   = FLOW[idx]
 
-        if q.get("allow_multiple", False):
-            raw_parts = [p.strip() for p in body.replace(",", " ").replace("&", " ").replace("+", " ").split()]
-            selected_indices = []
-            for p in raw_parts:
-                try:
-                    c = int(p)
-                    if 1 <= c <= q["max"]:
-                        if c not in selected_indices:
-                            selected_indices.append(c)
-                except ValueError:
-                    pass
+        try:
+            choice = int(body)
+        except ValueError:
+            start_inactivity_timer(phone)
+            await send_message(
+                phone,
+                f"⚠️ Please reply with a *number* between 1 and {q['max']}.\n\n{q['question']}"
+            )
+            return
 
-            if not selected_indices:
-                start_inactivity_timer(phone)
-                await send_message(
-                    phone,
-                    f"⚠️ Please reply with one or more numbers between 1 and {q['max']} (e.g. *1, 3, 4* or *6*).\n\n{q['question']}"
-                )
-                return
+        if not (1 <= choice <= q["max"]):
+            start_inactivity_timer(phone)
+            await send_message(
+                phone,
+                f"⚠️ Invalid choice. Please reply with a number between *1* and *{q['max']}*.\n\n{q['question']}"
+            )
+            return
 
-            if len(q["options"]) in selected_indices:
-                selected_labels = "Everything"
-            else:
-                selected_labels = ", ".join([q["options"][i - 1] for i in selected_indices])
+        session["data"][q["field"]] = q["options"][choice - 1]
 
-            session["data"][q["field"]] = selected_labels
-        else:
-            try:
-                choice = int(body)
-            except ValueError:
-                start_inactivity_timer(phone)
-                await send_message(
-                    phone,
-                    f"⚠️ Please reply with a *number* between 1 and {q['max']}.\n\n{q['question']}"
-                )
-                return
-
-            if not (1 <= choice <= q["max"]):
-                start_inactivity_timer(phone)
-                await send_message(
-                    phone,
-                    f"⚠️ Invalid choice. Please reply with a number between *1* and *{q['max']}*.\n\n{q['question']}"
-                )
-                return
-
-            session["data"][q["field"]] = q["options"][choice - 1]
-
-        # Instant autosave after each question
-        save_lead(phone, session["data"], status=f"In Progress (Q{idx + 1})")
         next_idx = idx + 1
 
         if next_idx < len(FLOW):
+            # Advance to next question
             session["step_index"] = next_idx
             session["state"]      = FLOW[next_idx]["state"]
+            save_lead(phone, session["data"], status=f"In Progress (Q{next_idx + 1})")
             start_inactivity_timer(phone)
             await send_message(phone, FLOW[next_idx]["question"])
         else:
-            session["state"]     = "lead_name"
-            session["lead_step"] = 0
-            start_inactivity_timer(phone)
-            await send_message(phone, LEAD_INTRO + "\n\n" + LEAD_FIELDS[0]["question"])
-        return
-
-    # ── Lead-capture free-text fields (Name & City only) ──────────────────
-    if state in LEAD_STATE_MAP:
-        ls    = session["lead_step"]
-        field = LEAD_FIELDS[ls]
-
-        if len(body) < 2:
-            start_inactivity_timer(phone)
-            await send_message(phone, f"⚠️ Please enter a valid response.\n\n{field['question']}")
-            return
-
-        session["data"][field["field"]] = body
-        save_lead(phone, session["data"], status=f"In Progress ({field['field'].title()})")
-        next_ls = ls + 1
-
-        if next_ls < len(LEAD_FIELDS):
-            session["lead_step"] = next_ls
-            session["state"]     = LEAD_FIELDS[next_ls]["state"]
-            start_inactivity_timer(phone)
-            await send_message(phone, LEAD_FIELDS[next_ls]["question"])
-        else:
+            # All 4 questions completed! Zero friction completion
             cancel_inactivity_timer(phone)
             save_lead(phone, session["data"], status="Completed")
             session["state"] = "complete"
@@ -610,6 +499,8 @@ async def handle_message(phone: str, raw_text: str) -> None:
     session = reset_session(phone)
     session["state"]      = "q1_country"
     session["step_index"] = 0
+    save_lead(phone, session["data"], status="In Progress (Q1)")
+    start_inactivity_timer(phone)
     await send_message(phone, WELCOME_MESSAGE + "\n\n" + FLOW[0]["question"])
 
 
@@ -652,6 +543,7 @@ async def webhook(request: Request):
 
     sender_phone = None
     text = None
+    sender_name = ""
 
     # Format 1: Gupshup format (v2)
     event_type = body.get("type", "")
@@ -659,6 +551,7 @@ async def webhook(request: Request):
         payload = body.get("payload", {})
         msg_type = payload.get("type", "")
         sender_phone = payload.get("source", "")
+        sender_name = payload.get("sender", {}).get("name", "")
         if msg_type == "text":
             text = payload.get("payload", {}).get("text", "")
 
@@ -673,14 +566,19 @@ async def webhook(request: Request):
                         if msg.get("type") == "text":
                             sender_phone = msg.get("from")
                             text = msg.get("text", {}).get("body")
+                            # Extract name from contacts array
+                            contacts = value.get("contacts", [])
+                            if contacts:
+                                sender_name = contacts[0].get("profile", {}).get("name", "")
         except Exception as e:
             log.warning("Failed to parse Meta v3 payload: %s", e)
 
     # Process message if valid sender and text extracted
     if sender_phone and text:
-        await handle_message(sender_phone, text)
+        await handle_message(sender_phone, text, sender_name)
 
     return JSONResponse({"status": "ok"})
+
 
 
 @app.get("/webhook")
