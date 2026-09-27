@@ -609,15 +609,131 @@ async def health():
 
 
 @app.get("/leads")
-async def get_leads():
-    """View all captured leads as JSON."""
-    if not os.path.isfile(LEADS_FILE):
-        return {"leads": [], "total": 0}
+async def get_leads(request: Request):
+    """Beautiful HTML dashboard for the client to view all leads."""
+    from fastapi.responses import HTMLResponse
+
     leads = []
-    with open(LEADS_FILE, "r", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            leads.append(row)
-    return {"leads": leads, "total": len(leads)}
+    if os.path.isfile(LEADS_FILE):
+        with open(LEADS_FILE, "r", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                leads.append(row)
+
+    total      = len(leads)
+    completed  = sum(1 for l in leads if l.get("status") == "Completed")
+    abandoned  = sum(1 for l in leads if "Abandoned" in l.get("status", ""))
+    in_prog    = total - completed - abandoned
+
+    def status_badge(s):
+        if s == "Completed":
+            return f'<span class="badge completed">{s}</span>'
+        elif "Abandoned" in s:
+            return f'<span class="badge abandoned">{s}</span>'
+        else:
+            return f'<span class="badge inprog">{s}</span>'
+
+    rows_html = ""
+    for i, l in enumerate(reversed(leads), 1):
+        rows_html += f"""
+        <tr>
+          <td>{i}</td>
+          <td>{l.get('timestamp','')}</td>
+          <td>+{l.get('phone','')}</td>
+          <td>{l.get('name','—')}</td>
+          <td>{l.get('country','—')}</td>
+          <td>{l.get('study_level','—')}</td>
+          <td>{l.get('intake','—')}</td>
+          <td>{l.get('budget','—')}</td>
+          <td>{status_badge(l.get('status',''))}</td>
+        </tr>"""
+
+    if not rows_html:
+        rows_html = '<tr><td colspan="9" style="text-align:center;color:#888;padding:40px;">No leads yet. Share the WhatsApp number to start collecting!</td></tr>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Alley Overseas — Leads Dashboard</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #1a202c; }}
+    header {{ background: linear-gradient(135deg,#1a56db,#0e9f6e); color: white; padding: 24px 32px; }}
+    header h1 {{ font-size: 1.6rem; font-weight: 700; }}
+    header p  {{ font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }}
+    .stats {{ display: flex; gap: 16px; padding: 24px 32px; flex-wrap: wrap; }}
+    .card {{ background: white; border-radius: 12px; padding: 20px 28px; flex: 1; min-width: 140px;
+             box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+    .card .num {{ font-size: 2rem; font-weight: 700; }}
+    .card .lbl {{ font-size: 0.8rem; color: #6b7280; margin-top: 4px; }}
+    .card.green .num {{ color: #0e9f6e; }}
+    .card.red   .num {{ color: #e02424; }}
+    .card.blue  .num {{ color: #1a56db; }}
+    .card.gray  .num {{ color: #6b7280; }}
+    .toolbar {{ padding: 0 32px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }}
+    .toolbar a {{ background: #1a56db; color: white; padding: 8px 18px; border-radius: 8px;
+                  text-decoration: none; font-size: 0.85rem; font-weight: 600; }}
+    .toolbar a:hover {{ background: #1648c7; }}
+    .table-wrap {{ padding: 0 32px 40px; overflow-x: auto; }}
+    table {{ width: 100%; border-collapse: collapse; background: white;
+             border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+    th {{ background: #1a56db; color: white; padding: 12px 14px; text-align: left; font-size: 0.82rem; text-transform: uppercase; letter-spacing: .04em; }}
+    td {{ padding: 11px 14px; border-bottom: 1px solid #f3f4f6; font-size: 0.88rem; }}
+    tr:last-child td {{ border-bottom: none; }}
+    tr:hover td {{ background: #f9fafb; }}
+    .badge {{ padding: 3px 10px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; }}
+    .completed {{ background: #def7ec; color: #03543f; }}
+    .abandoned  {{ background: #fde8e8; color: #9b1c1c; }}
+    .inprog     {{ background: #e1effe; color: #1e429f; }}
+    .refresh {{ font-size: 0.8rem; color: #6b7280; }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🌍 Alley Overseas — WhatsApp Leads Dashboard</h1>
+    <p>Live lead data captured from your WhatsApp bot</p>
+  </header>
+
+  <div class="stats">
+    <div class="card gray">  <div class="num">{total}</div>     <div class="lbl">Total Leads</div></div>
+    <div class="card green"> <div class="num">{completed}</div> <div class="lbl">✅ Completed</div></div>
+    <div class="card red">   <div class="num">{abandoned}</div> <div class="lbl">⚠️ Abandoned</div></div>
+    <div class="card blue">  <div class="num">{in_prog}</div>   <div class="lbl">🔄 In Progress</div></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="refresh">🕒 Last loaded: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</span>
+    <a href="/leads/export">⬇️ Download CSV</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Date &amp; Time</th><th>WhatsApp</th><th>Name</th>
+          <th>Country</th><th>Study Level</th><th>Intake</th><th>Budget</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+    </table>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/leads/export")
+async def export_leads():
+    """Download leads as a CSV file."""
+    from fastapi.responses import FileResponse
+    if not os.path.isfile(LEADS_FILE):
+        return JSONResponse({"error": "No leads yet"}, status_code=404)
+    return FileResponse(
+        path=LEADS_FILE,
+        media_type="text/csv",
+        filename=f"alley_overseas_leads_{datetime.now().strftime('%Y%m%d')}.csv",
+    )
 
 
 @app.delete("/leads/clear")
@@ -625,3 +741,4 @@ async def clear_leads():
     if os.path.isfile(LEADS_FILE):
         os.remove(LEADS_FILE)
     return {"status": "cleared"}
+
